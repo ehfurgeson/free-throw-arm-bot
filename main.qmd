@@ -1,0 +1,85 @@
+---
+title: "Fetch Free Throw: Experiment Log"
+author: "Eli Furgeson"
+format: 
+  html:
+    toc: true
+    code-fold: true
+execute:
+  warning: false
+---
+
+## Phase 1: Environment Setup & Imports
+*Goal: Ensure paths are correct and the custom environment loads successfully.*
+
+```{python}
+import sys
+import os
+import gymnasium as gym
+import numpy as np
+
+# Ensure root directory is in the path for imports
+sys.path.append(os.path.abspath('.'))
+
+from envs.fetch_throw_env import FetchThrowWrapper
+from scripts.expert_policy import compute_expert_action
+```
+
+## Phase 2: Environment Sanity Check
+*Goal: Spawn the custom environment and verify the goal is out of reach.*
+
+```{python}
+#| eval: false
+# Change eval to true when ready to test
+env = gym.make('FetchPickAndPlace-v2', render_mode="human")
+env = FetchThrowWrapper(env)
+
+obs, info = env.reset()
+print("Achieved Goal (Gripper):", obs['achieved_goal'])
+print("Desired Goal (Target):", obs['desired_goal'])
+env.close()
+```
+
+## Phase 3: Tuning the Scripted Expert
+*Goal: Run a single episode of the scripted expert and watch the behavior to tune the kinematic thresholds in expert_policy.py.*
+
+```{python}
+#| eval: false
+env = gym.make('FetchPickAndPlace-v3', render_mode="human")
+env = FetchThrowWrapper(env)
+
+obs, info = env.reset()
+done = False
+truncated = False
+
+while not (done or truncated):
+    action = compute_expert_action(obs)
+    obs, reward, done, truncated, info = env.step(action)
+    
+env.close()
+print("Episode finished. Success:", info.get('is_success', 0.0))
+```
+
+## Phase 4: Automated Data Collection
+*Goal: Once the expert is tuned, run the automated pipeline to collect 100 successful demonstrations.*
+
+```{python}
+#| eval: false
+from scripts.collect_demonstrations import collect_data
+
+# Run this cell once the expert policy is verified visually
+collect_data(num_successes_needed=100)
+```
+
+## Phase 5: Dataset Verification
+*Goal: Load the saved .npz file and verify the data structures are ready for Behavioral Cloning.*
+
+```{python}
+#| eval: false
+dataset = np.load('data/expert_demonstrations.npz', allow_pickle=True)
+trajectories = dataset['trajectories']
+
+print(f"Loaded {len(trajectories)} successful trajectories.")
+print(f"Sample observation shape: {np.array(trajectories[0]['obs']).shape}")
+print(f"Sample action shape: {np.array(trajectories[0]['actions']).shape}")
+```

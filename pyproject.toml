@@ -1,13 +1,13 @@
 [project]
 name = "free-throw-arm-bot"
 version = "0.1.0"
-description = "Add your description here"
+description = "Accelerating Basketball Free Throw Skill Acquisition with BC and RL"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.11.*"
 dependencies = [
-    "gymnasium>=0.29.1",
-    "gymnasium-robotics>=1.2.3",
+    "gymnasium==0.29.1",
+    "gymnasium-robotics==1.2.2",
+    "mujoco==2.3.3",
     "imitation>=1.0.0",
-    "mujoco>=3.0.0",
     "stable-baselines3>=2.0.0",
 ]

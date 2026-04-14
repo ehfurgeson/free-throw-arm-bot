@@ -1,0 +1,36 @@
+# Python Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+
+# Jupyter Notebooks (if you use them for data analysis)
+.ipynb_checkpoints
+
+# RL & Stable-Baselines3 Specifics
+# Ignore TensorBoard logs (these get massive quickly)
+logs/
+tb_logs/
+
+# Ignore intermediate model checkpoints
+*.zip
+!final_models/*.zip  # Allow explicitly saving final models in a specific folder
+
+# Data Collection
+# Ignore massive datasets if they exceed GitHub limits, 
+# but you might want to track a small 100-demo set if it's lightweight.
+# Uncomment the below if your expert data gets too large.
+# *.npz
+# *.pkl
+# data/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/

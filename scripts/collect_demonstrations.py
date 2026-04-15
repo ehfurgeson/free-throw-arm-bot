@@ -1,11 +1,12 @@
 import gymnasium as gym
 import numpy as np
-from expert_policy import compute_expert_action
+from scripts.expert_policy import compute_expert_action
 from envs.fetch_throw_env import FetchThrowWrapper
 
-def collect_data(num_successes_needed=100):
-    base_env = gym.make('FetchPickAndPlace-v2') 
-    env = FetchThrowWrapper(base_env)
+def collect_data(num_successes_needed=100, max_episode_steps=200, throw_overclock_factor=None):
+    base_env = gym.make('FetchPickAndPlace-v2', max_episode_steps=max_episode_steps)
+    # None → DEFAULT_THROW_OVERCLOCK_FACTOR (3.0) in FetchThrowWrapper
+    env = FetchThrowWrapper(base_env, throw_overclock_factor=throw_overclock_factor)
 
     successful_trajectories = []
     successes_collected = 0

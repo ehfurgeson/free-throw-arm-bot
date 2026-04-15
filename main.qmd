@@ -31,7 +31,13 @@ from scripts.expert_policy import compute_expert_action
 ```{python}
 #| eval: false
 # Change eval to true when ready to test
-env = gym.make('FetchPickAndPlace-v2', render_mode="human")
+max_episode_steps = 200
+env = gym.make(
+    'FetchPickAndPlace-v2',
+    render_mode="human",
+    max_episode_steps=max_episode_steps
+)
+# Uses DEFAULT_THROW_OVERCLOCK_FACTOR (3.0); pass throw_overclock_factor=... to override
 env = FetchThrowWrapper(env)
 
 obs, info = env.reset()
@@ -45,19 +51,63 @@ env.close()
 
 ```{python}
 #| eval: false
-env = gym.make('FetchPickAndPlace-v3', render_mode="human")
+import time # Add this import
+
+max_episode_steps = 200
+env = gym.make(
+    'FetchPickAndPlace-v2',
+    render_mode="human",
+    max_episode_steps=max_episode_steps
+)
+# Uses DEFAULT_THROW_OVERCLOCK_FACTOR (3.0); pass throw_overclock_factor=... to override
 env = FetchThrowWrapper(env)
 
-obs, info = env.reset()
-done = False
-truncated = False
+episode_idx = 0
+successes = 0
+max_episodes = 1000  # safety cap; raise if you want
 
-while not (done or truncated):
-    action = compute_expert_action(obs)
-    obs, reward, done, truncated, info = env.step(action)
-    
-env.close()
-print("Episode finished. Success:", info.get('is_success', 0.0))
+print("Starting continuous expert debugging loop...")
+print("Use Ctrl+C in the terminal/notebook to stop.\n")
+
+try:
+    while episode_idx < max_episodes:
+        obs, info = env.reset()
+        episode_idx += 1
+
+        # Force a render to ensure the viewer window is created in memory
+        env.render()
+
+        # Access the underlying MuJoCo camera and rotate it once for better view
+        viewer = env.unwrapped.mujoco_renderer.viewer
+        if viewer is not None and episode_idx == 1:
+            viewer.cam.azimuth += -60
+            viewer.cam.elevation = -25
+            viewer.cam.distance += 0.5
+
+        done = False
+        truncated = False
+        steps = 0
+
+        while not (done or truncated):
+            action = compute_expert_action(obs)
+            obs, reward, done, truncated, info = env.step(action)
+            steps += 1
+            time.sleep(0.01)  # slow down so motion is visible
+
+        ep_success = float(info.get("is_success", 0.0))
+        successes += int(ep_success)
+        print(
+            f"Episode {episode_idx:03d} | steps={steps:03d} | "
+            f"success={int(ep_success)} | done={done} | truncated={truncated} | "
+            f"running_success_rate={successes}/{episode_idx} ({successes/episode_idx:.1%})"
+        )
+except KeyboardInterrupt:
+    print("\nStopped by user.")
+finally:
+    input("Press Enter in your terminal/notebook to close the viewer...")
+
+# env.close() only call if you don't want to rerun again
+
 ```
 
 ## Phase 4: Automated Data Collection
@@ -68,7 +118,11 @@ print("Episode finished. Success:", info.get('is_success', 0.0))
 from scripts.collect_demonstrations import collect_data
 
 # Run this cell once the expert policy is verified visually
-collect_data(num_successes_needed=100)
+collect_data(
+    num_successes_needed=100,
+    max_episode_steps=200,
+    # omit throw_overclock_factor to use wrapper default (3.0); pass explicitly to override
+)
 ```
 
 ## Phase 5: Dataset Verification

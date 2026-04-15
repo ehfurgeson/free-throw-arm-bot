@@ -64,7 +64,7 @@ env = FetchThrowWrapper(env)
 
 episode_idx = 0
 successes = 0
-max_episodes = 1000  # safety cap; raise if you want
+max_episodes = 10  # safety cap; raise if you want
 
 print("Starting continuous expert debugging loop...")
 print("Use Ctrl+C in the terminal/notebook to stop.\n")
@@ -92,7 +92,7 @@ try:
             action = compute_expert_action(obs)
             obs, reward, done, truncated, info = env.step(action)
             steps += 1
-            time.sleep(0.01)  # slow down so motion is visible
+            time.sleep(0.05)  # slow down so motion is visible
 
         ep_success = float(info.get("is_success", 0.0))
         successes += int(ep_success)

@@ -39,3 +39,5 @@ Thumbs.db
 plan.md
 notes.md
 example_code/
+artifacts/
+viz.py

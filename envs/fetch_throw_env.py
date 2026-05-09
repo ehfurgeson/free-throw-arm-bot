@@ -51,41 +51,61 @@ def _patch_fetch_pos_scale(unwrapped_env, factor: float) -> None:
 
 
 class FetchThrowWrapper(gym.Wrapper):
-    def __init__(self, env, throw_overclock_factor=None):
+    def __init__(
+        self,
+        env,
+        throw_overclock_factor=None,
+        override_reward_on_score=True,
+        score_reward=0.0,
+        goal_bonus=0.0,
+        terminate_on_score=False,
+    ):
         super().__init__(env)
         self.has_scored = False
+        self._goal_bonus_awarded = False
         if throw_overclock_factor is None:
             throw_overclock_factor = DEFAULT_THROW_OVERCLOCK_FACTOR
         self.throw_overclock_factor = float(max(1.0, throw_overclock_factor))
+        self.override_reward_on_score = bool(override_reward_on_score)
+        self.score_reward = float(score_reward)
+        self.goal_bonus = float(goal_bonus)
+        self.terminate_on_score = bool(terminate_on_score)
         _patch_fetch_pos_scale(self.env.unwrapped, self.throw_overclock_factor)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        self.has_scored = False 
-        
+        self.has_scored = False
+        self._goal_bonus_awarded = False
+
         hoop_center = np.array([2.595, 0.75, 0.7])
-        
+
         obs['desired_goal'] = hoop_center.copy()
         self.env.unwrapped.goal = hoop_center.copy()
-        
+
         return obs, info
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        ball_pos = obs['achieved_goal'] 
-        
+        ball_pos = obs['achieved_goal']
+
         # Updated bounding box for the new hoop location
         in_x = 2.5 <= ball_pos[0] <= 2.7
         in_y = 0.65 <= ball_pos[1] <= 0.85
-        
+
         # New Z-bounds: The rim is at 0.7. Catch the ball as it falls from 0.8 down to 0.4.
         in_z = 0.4 <= ball_pos[2] <= 0.8
-        
+
         if in_x and in_y and in_z:
             self.has_scored = True
-            
+
         if self.has_scored:
             info['is_success'] = 1.0
-            reward = 0.0 
-            
+            if self.override_reward_on_score:
+                reward = self.score_reward
+            if (self.goal_bonus != 0.0) and (not self._goal_bonus_awarded):
+                reward += self.goal_bonus
+                self._goal_bonus_awarded = True
+            if self.terminate_on_score:
+                terminated = True
+
         return obs, reward, terminated, truncated, info

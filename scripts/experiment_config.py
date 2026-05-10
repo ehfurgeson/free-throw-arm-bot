@@ -48,7 +48,7 @@ def make_dense_only_env_config() -> EnvironmentConfig:
     )
 
 
-def make_dense_plus_bonus_env_config(goal_bonus: float = 5.0) -> EnvironmentConfig:
+def make_dense_plus_bonus_env_config(goal_bonus: float = 50.0) -> EnvironmentConfig:
     return EnvironmentConfig(
         override_reward_on_score = False,
         goal_bonus = goal_bonus,

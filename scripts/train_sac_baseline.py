@@ -293,6 +293,7 @@ def main():
 
     env_cfg = replace(
         make_dense_only_env_config(),
+        goal_bonus=50.0,
         env_id=args.env_id,
         terminate_on_score=args.terminate_on_score,
     )

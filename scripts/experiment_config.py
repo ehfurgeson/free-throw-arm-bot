@@ -11,6 +11,8 @@ class EnvironmentConfig:
     score_reward: float = 0.0
     goal_bonus: float = 0.0
     terminate_on_score: bool = False
+    # End episode when ball center drops below this z (meters); None disables.
+    terminate_ball_below_z: float | None = 0.1
 
 
 @dataclass(frozen = True)

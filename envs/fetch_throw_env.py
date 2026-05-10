@@ -59,6 +59,7 @@ class FetchThrowWrapper(gym.Wrapper):
         score_reward=0.0,
         goal_bonus=0.0,
         terminate_on_score=False,
+        terminate_ball_below_z=0.1,
     ):
         super().__init__(env)
         self.has_scored = False
@@ -70,6 +71,9 @@ class FetchThrowWrapper(gym.Wrapper):
         self.score_reward = float(score_reward)
         self.goal_bonus = float(goal_bonus)
         self.terminate_on_score = bool(terminate_on_score)
+        self.terminate_ball_below_z = (
+            None if terminate_ball_below_z is None else float(terminate_ball_below_z)
+        )
         _patch_fetch_pos_scale(self.env.unwrapped, self.throw_overclock_factor)
 
     def reset(self, **kwargs):
@@ -107,5 +111,12 @@ class FetchThrowWrapper(gym.Wrapper):
                 self._goal_bonus_awarded = True
             if self.terminate_on_score:
                 terminated = True
+
+        if (
+            self.terminate_ball_below_z is not None
+            and float(ball_pos[2]) < self.terminate_ball_below_z
+        ):
+            terminated = True
+            info["terminated_ball_floor"] = True
 
         return obs, reward, terminated, truncated, info

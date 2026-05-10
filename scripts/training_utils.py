@@ -40,6 +40,7 @@ def make_throw_env(env_cfg: EnvironmentConfig, seed: int | None = None):
         score_reward = env_cfg.score_reward,
         goal_bonus = env_cfg.goal_bonus,
         terminate_on_score = env_cfg.terminate_on_score,
+        terminate_ball_below_z = env_cfg.terminate_ball_below_z,
     )
     if seed is not None:
         env.reset(seed = seed)

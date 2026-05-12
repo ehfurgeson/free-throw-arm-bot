@@ -8,6 +8,11 @@ import numpy as np
 # value for data collection, BC, and RL so the MDP matches.
 DEFAULT_THROW_OVERCLOCK_FACTOR = 3.0
 
+# Canonical fixed ball spawn position used when `fixed_object_position` is set.
+# Centered roughly on the typical Fetch table sample range, sitting on the
+# table surface (ball radius ~0.025 m, table top z ~0.4 m).
+DEFAULT_FIXED_OBJECT_POSITION = (1.3, 0.75, 0.45)
+
 
 def _patch_fetch_pos_scale(unwrapped_env, factor: float) -> None:
     """Scale Fetch Cartesian mocap deltas beyond the default 0.05 m/step cap.
@@ -60,6 +65,7 @@ class FetchThrowWrapper(gym.Wrapper):
         goal_bonus=0.0,
         terminate_on_score=False,
         terminate_ball_below_z=0.1,
+        fixed_object_position=None,
     ):
         super().__init__(env)
         self.has_scored = False
@@ -74,12 +80,55 @@ class FetchThrowWrapper(gym.Wrapper):
         self.terminate_ball_below_z = (
             None if terminate_ball_below_z is None else float(terminate_ball_below_z)
         )
+        self.fixed_object_position = (
+            None
+            if fixed_object_position is None
+            else np.asarray(fixed_object_position, dtype=np.float64).copy()
+        )
         _patch_fetch_pos_scale(self.env.unwrapped, self.throw_overclock_factor)
+
+    def _force_object_position(self, position):
+        """Overwrite the object's xyz in MuJoCo and refresh the env observation.
+
+        The full (x, y, z) is written from `position`. Callers should pick a
+        z that is slightly above the table surface so the ball falls under
+        gravity and settles on the table during the policy's idle pre-grasp
+        steps, rather than starting interpenetrated with the table mesh.
+
+        Returns the refreshed obs dict on success, or None if the underlying
+        env doesn't expose the modern (model, data) MuJoCo bindings — in which
+        case the caller should fall back to the original obs.
+        """
+        fetch_env = self.env.unwrapped
+        utils = getattr(fetch_env, "_utils", None)
+        model = getattr(fetch_env, "model", None)
+        data = getattr(fetch_env, "data", None)
+        if utils is None or model is None or data is None:
+            return None
+        try:
+            qpos = utils.get_joint_qpos(model, data, "object0:joint").copy()
+            qpos[:3] = np.asarray(position, dtype=qpos.dtype)
+            utils.set_joint_qpos(model, data, "object0:joint", qpos)
+            # Zero out any residual object velocity from the previous step so
+            # the ball starts at rest at the fixed position.
+            qvel = utils.get_joint_qvel(model, data, "object0:joint")
+            qvel[:] = 0.0
+            utils.set_joint_qvel(model, data, "object0:joint", qvel)
+            import mujoco
+            mujoco.mj_forward(model, data)
+            return fetch_env._get_obs()
+        except Exception:
+            return None
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         self.has_scored = False
         self._goal_bonus_awarded = False
+
+        if self.fixed_object_position is not None:
+            forced_obs = self._force_object_position(self.fixed_object_position)
+            if forced_obs is not None:
+                obs = forced_obs
 
         hoop_center = np.array([2.595, 0.75, 0.7])
 

@@ -1,11 +1,48 @@
 import numpy as np
 
+
+def reset_expert_state() -> None:
+    """Clear `compute_expert_action`'s persistent FSM state so the next call
+    re-initializes from scratch (as if it were the first call in the process).
+
+    The expert relies on a > 0.15 m inter-step ball jump to auto-detect
+    `env.reset()`, which breaks when the ball spawn is pinned: end-of-episode
+    ball positions are within ~0.07 m of the new spawn, so the FSM otherwise
+    carries `windup` / `follow_through` state into the next episode. Callers
+    that own the episode boundary (e.g. `collect_demonstrations.py` or an eval
+    loop) should call this between episodes.
+    """
+    for attr in (
+        "_state",
+        "_preopen_counter",
+        "_approach_open_counter",
+        "_grasp_wait_counter",
+        "_grip_lock_counter",
+        "_lift_check_counter",
+        "_grasp_object_z_ref",
+        "_open_wait_counter",
+        "_descend_counter",
+        "_follow_counter",
+        "_windup_counter",
+        "_windup_target",
+        "_post_grasp_min_z",
+        "_prev_object_pos",
+        "_prev_finger_open_sum",
+        "_last_gripper_cmd",
+        "_open_sign",
+        "_open_sign_locked",
+    ):
+        if hasattr(compute_expert_action, attr):
+            delattr(compute_expert_action, attr)
+
+
 def compute_expert_action(obs):
     # ---- Tunable parameters (edit while rendering) ----
     preopen_steps = 12                  # stay still and command full-open before any motion
     approach_open_min_steps = 4         # keep opening while moving toward hover target
     approach_open_height_bias = 0.08    # extra Z bias during approach to avoid touching ball
     finger_open_sum_thresh = 0.012      # optional open confirmation, non-blocking with timeout
+    finger_fully_open_thresh = 0.08     # strict gate before descend: fingers must be ~fully open
     hover_height = 0.16                 # meters above ball center for hover
     hover_xy_tol = 0.012                # XY alignment tolerance (m)
     hover_z_tol = 0.02                  # Hover altitude tolerance (m)
@@ -25,6 +62,7 @@ def compute_expert_action(obs):
     windup_x_offset = -0.30             # Backward offset from grasp point (m)
     windup_z_offset = 0.06              # Backward + upward wind-up (never down after grasp)
     windup_pos_tol = 0.015              # Wind-up position tolerance (m)
+    windup_max_steps = 25               # Force transition to whip after this many steps even if target unreached
     release_x_threshold = 1.50          # Open gripper once gripper_x >= this
     reset_jump_threshold = 0.15         # Detect episode reset by object jump
 
@@ -57,12 +95,15 @@ def compute_expert_action(obs):
         compute_expert_action._open_wait_counter = 0
         compute_expert_action._descend_counter = 0
         compute_expert_action._follow_counter = 0
+        compute_expert_action._windup_counter = 0
         compute_expert_action._windup_target = None
         compute_expert_action._post_grasp_min_z = gripper_pos[2]
         compute_expert_action._prev_object_pos = object_pos.copy()
         compute_expert_action._prev_finger_open_sum = finger_open_sum
         compute_expert_action._last_gripper_cmd = -1.0
-        compute_expert_action._open_sign = -1.0  # will auto-calibrate if env is inverted
+        # Fetch convention: +1 opens fingers, -1 closes. Auto-calibration below
+        # is a backstop only — starting at +1 avoids a wrong-sign descend.
+        compute_expert_action._open_sign = 1.0
         compute_expert_action._open_sign_locked = False
 
     # Detect episode resets robustly (object teleports on env.reset()).
@@ -80,6 +121,7 @@ def compute_expert_action(obs):
         compute_expert_action._open_wait_counter = 0
         compute_expert_action._descend_counter = 0
         compute_expert_action._follow_counter = 0
+        compute_expert_action._windup_counter = 0
         compute_expert_action._windup_target = None
         compute_expert_action._post_grasp_min_z = gripper_pos[2]
         compute_expert_action._prev_finger_open_sum = finger_open_sum
@@ -163,7 +205,12 @@ def compute_expert_action(obs):
 
         xy_ok = np.linalg.norm(object_rel_pos[0:2]) <= hover_xy_tol
         z_ok = abs(delta[2]) <= hover_z_tol
-        if xy_ok and z_ok:
+        # Hard gate: refuse to descend until fingers are clearly open. Otherwise
+        # a partially-closed gripper shoves the ball off the table on the way
+        # down (which is exactly what happens when the fixed ball spawn sits
+        # directly under the gripper's reset position).
+        fingers_fully_open = finger_open_sum >= finger_fully_open_thresh
+        if xy_ok and z_ok and fingers_fully_open:
             compute_expert_action._open_wait_counter += 1
         else:
             compute_expert_action._open_wait_counter = 0
@@ -226,6 +273,7 @@ def compute_expert_action(obs):
                 object_pos[2] + post_grasp_min_lift,
             )
             compute_expert_action._state = "windup"
+            compute_expert_action._windup_counter = 0
             compute_expert_action._windup_target = gripper_pos + np.array(
                 [windup_x_offset, 0.0, windup_z_offset], dtype=np.float32
             )
@@ -237,7 +285,15 @@ def compute_expert_action(obs):
         action = np.array([action_xyz[0], action_xyz[1], action_xyz[2], close_cmd], dtype=np.float32)
         action = _enforce_post_grasp_no_down(action)
 
-        if np.linalg.norm(delta) <= windup_pos_tol:
+        compute_expert_action._windup_counter += 1
+        # Transition to whip when target reached OR after a hard timeout: the
+        # windup target sits ~0.3 m behind the grasp point, which can clip the
+        # Fetch arm's reach envelope. If we wait for an exact position match
+        # the FSM stalls in windup forever; the timeout guarantees we always
+        # get to the whip phase with whatever backward velocity we built up.
+        reached = np.linalg.norm(delta) <= windup_pos_tol
+        timed_out = compute_expert_action._windup_counter >= windup_max_steps
+        if reached or timed_out:
             compute_expert_action._state = "whip"
 
     elif state == "whip":

@@ -41,6 +41,7 @@ def make_throw_env(env_cfg: EnvironmentConfig, seed: int | None = None):
         goal_bonus = env_cfg.goal_bonus,
         terminate_on_score = env_cfg.terminate_on_score,
         terminate_ball_below_z = env_cfg.terminate_ball_below_z,
+        fixed_object_position = env_cfg.fixed_object_position,
     )
     if seed is not None:
         env.reset(seed = seed)
@@ -65,6 +66,11 @@ def evaluate_policy_callable(
 
     for ep in range(n_episodes):
         obs, info = env.reset(seed = seed + ep)
+        # Stateful policies (e.g. BC with previous-action augmentation) opt in by
+        # exposing a `reset()` method so episode boundaries clear their state.
+        reset_fn = getattr(policy_fn, "reset", None)
+        if callable(reset_fn):
+            reset_fn()
         done = False
         truncated = False
         ep_return = 0.0
@@ -85,7 +91,28 @@ def evaluate_policy_callable(
     }
 
 
-def load_expert_transitions(npz_path: str | Path) -> tuple[np.ndarray, np.ndarray]:
+def load_expert_transitions(
+    npz_path: str | Path,
+    include_prev_action: bool = True,
+    frame_stack: int = 1,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Load expert transitions, optionally augmenting each observation with the
+    previous action and a stack of the most recent env observations.
+
+    Each augmented observation has the layout:
+
+        [ obs_{t-K+1}, obs_{t-K+2}, ..., obs_{t-1}, obs_t, prev_action_t ]
+
+    where `K = frame_stack` and indices before the start of the trajectory
+    are zero-padded. `prev_action_t = actions[t-1]` (zeros at t=0).
+
+    Frame stacking lets the BC network recover the expert FSM's elapsed-time
+    counters from a window of recent obs (e.g. "I've been stationary for K
+    steps -> commit to descend / close"), which a single obs cannot encode.
+    The prev-action augmentation keeps the policy from flipping its gripper
+    sign on adjacent steps.
+    """
+    frame_stack = int(max(1, frame_stack))
     dataset = np.load(npz_path, allow_pickle = True)
     trajectories = dataset["trajectories"]
     obs_buffer = []
@@ -96,7 +123,30 @@ def load_expert_transitions(npz_path: str | Path) -> tuple[np.ndarray, np.ndarra
         assert obs.ndim == 2, "Expected 2D observations per trajectory."
         assert acts.ndim == 2, "Expected 2D actions per trajectory."
         assert obs.shape[0] == acts.shape[0], "Obs/action step mismatch in trajectory."
-        obs_buffer.append(obs)
+
+        T, env_obs_dim = obs.shape
+        action_dim = acts.shape[1]
+
+        if frame_stack > 1:
+            stacked = np.zeros((T, frame_stack * env_obs_dim), dtype = np.float32)
+            for t in range(T):
+                start = max(0, t - frame_stack + 1)
+                window = obs[start : t + 1]
+                pad_count = frame_stack - window.shape[0]
+                if pad_count > 0:
+                    pad = np.zeros((pad_count, env_obs_dim), dtype = np.float32)
+                    window = np.concatenate([pad, window], axis = 0)
+                stacked[t] = window.reshape(-1)
+            obs_out = stacked
+        else:
+            obs_out = obs
+
+        if include_prev_action:
+            zero_first = np.zeros((1, action_dim), dtype = np.float32)
+            prev_acts = np.concatenate([zero_first, acts[:-1]], axis = 0)
+            obs_out = np.concatenate([obs_out, prev_acts], axis = 1)
+
+        obs_buffer.append(obs_out)
         act_buffer.append(acts)
 
     all_obs = np.concatenate(obs_buffer, axis = 0)

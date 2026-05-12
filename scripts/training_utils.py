@@ -42,6 +42,7 @@ def make_throw_env(env_cfg: EnvironmentConfig, seed: int | None = None):
         terminate_on_score = env_cfg.terminate_on_score,
         terminate_ball_below_z = env_cfg.terminate_ball_below_z,
         fixed_object_position = env_cfg.fixed_object_position,
+        floor_penalty = env_cfg.floor_penalty,
     )
     if seed is not None:
         env.reset(seed = seed)

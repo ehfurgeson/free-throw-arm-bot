@@ -260,6 +260,16 @@ def parse_args():
         default="FetchPickAndPlaceDense-v2",
         help="Gymnasium Robotics Fetch env id. Dense variant gives negative-distance shaping each step.",
     )
+    parser.add_argument(
+        "--floor-penalty",
+        type=float,
+        default=500.0,
+        help=(
+            "Positive penalty applied on the floor-termination step when the ball drops without "
+            "scoring. Counteracts the 'shove ball off the table to end the episode early' hack. "
+            "Pass 0.0 to disable."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -281,7 +291,9 @@ def main():
         goal_bonus=50.0,
         env_id=args.env_id,
         terminate_on_score=args.terminate_on_score,
+        floor_penalty=args.floor_penalty,
     )
+    print(f"Floor penalty on ball-drop (no-score): {args.floor_penalty}")
 
     exp_cfg = ExperimentConfig(
         seed=args.seed,

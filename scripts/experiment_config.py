@@ -13,6 +13,13 @@ class EnvironmentConfig:
     terminate_on_score: bool = False
     # End episode when ball center drops below this z (meters); None disables.
     terminate_ball_below_z: float | None = 0.1
+    # Positive value subtracted from reward on the floor-termination step (when
+    # the ball drops below `terminate_ball_below_z` without having scored). The
+    # early-termination on floor drop was added to speed up training, but with a
+    # sparse -1/step reward it created a hacking strategy: shove the ball off
+    # the table to stop accruing negative reward. Setting this above
+    # `max_episode_steps` makes ball-dumping strictly worse than timing out.
+    floor_penalty: float = 0.0
     # If set, the wrapper overrides the env's randomized object spawn to this
     # fixed (x, y, z) on every reset. This removes the pickup-location
     # variation so BC only has to learn one canonical approach + throw motion.

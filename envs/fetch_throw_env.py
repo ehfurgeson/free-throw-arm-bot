@@ -66,6 +66,7 @@ class FetchThrowWrapper(gym.Wrapper):
         terminate_on_score=False,
         terminate_ball_below_z=0.1,
         fixed_object_position=None,
+        floor_penalty=0.0,
     ):
         super().__init__(env)
         self.has_scored = False
@@ -85,6 +86,10 @@ class FetchThrowWrapper(gym.Wrapper):
             if fixed_object_position is None
             else np.asarray(fixed_object_position, dtype=np.float64).copy()
         )
+        # Positive value; subtracted from `reward` on the floor-termination step
+        # unless the ball already scored. Counteracts the reward-hacking strategy
+        # of dumping the ball off the table to escape -1/step early.
+        self.floor_penalty = float(max(0.0, floor_penalty))
         _patch_fetch_pos_scale(self.env.unwrapped, self.throw_overclock_factor)
 
     def _force_object_position(self, position):
@@ -167,5 +172,8 @@ class FetchThrowWrapper(gym.Wrapper):
         ):
             terminated = True
             info["terminated_ball_floor"] = True
+            if self.floor_penalty != 0.0 and not self.has_scored:
+                reward -= self.floor_penalty
+                info["floor_penalty_applied"] = float(self.floor_penalty)
 
         return obs, reward, terminated, truncated, info
